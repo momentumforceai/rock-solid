@@ -54,6 +54,13 @@
   .section-label { font-size: 12px; color: var(--muted-2); letter-spacing: 0.08em; text-transform: uppercase; margin-bottom: 14px; font-weight: 600; }
   .pill-sample { font-size: 10px; font-weight: 650; letter-spacing: .06em; text-transform: uppercase; color: var(--warn); background: rgba(251,191,36,0.12); border: 1px solid rgba(251,191,36,0.3); padding: 3px 9px; border-radius: 999px; }
   .mini-note { font-size: 11px; color: var(--muted-2); margin-top: 16px; }
+  .ramp-note { display:flex; align-items:center; gap: 12px; margin-bottom: var(--s3);
+    background: linear-gradient(120deg, rgba(20,160,143,0.16), rgba(14,109,154,0.08));
+    border: 1px solid rgba(20,160,143,0.32); border-radius: 16px; padding: 14px 18px;
+    font-size: 13.5px; line-height:1.5; color: #dcece9; backdrop-filter: blur(20px);
+    box-shadow: inset 0 1px 0 rgba(255,255,255,0.14); }
+  .ramp-note .emo { font-size: 18px; flex:none; }
+  .ramp-note b { color: #fff; font-weight: 650; }
 
   /* HERO */
   .hero { display: flex; align-items: flex-end; justify-content: space-between; gap: var(--s3); flex-wrap: wrap; margin-bottom: var(--s3); }
@@ -275,6 +282,8 @@
       </div>
     </header>
 
+    <div class="ramp-note reveal" id="rampNote" style="display:none;animation-delay:.03s"></div>
+
     <!-- EXEC SUMMARY + GRADE -->
     <div class="grid summary-row reveal" style="animation-delay:.05s">
       <div class="panel exec">
@@ -349,7 +358,7 @@
     </div>
 
     <!-- HEATMAP -->
-    <div class="panel reveal" style="margin-top:24px;animation-delay:.24s">
+    <div class="panel reveal" id="panelHeatmap" style="margin-top:24px;animation-delay:.24s">
       <div class="panel-head"><div><div class="panel-title">Best Times to Call</div><div class="panel-sub">Answer-rate intensity by day &amp; hour — darker means more pickups</div></div><span class="pill-sample">Aggregate pattern</span></div>
       <div class="heat" id="heatBody"></div>
       <div class="heat-hours" id="heatHours"></div>
@@ -357,7 +366,7 @@
     </div>
 
     <!-- HISTORICAL TIMELINE -->
-    <div class="panel reveal" style="margin-top:24px;animation-delay:.28s">
+    <div class="panel reveal" id="panelTimeline" style="margin-top:24px;animation-delay:.28s">
       <div class="panel-head"><div><div class="panel-title">Historical Performance Timeline</div><div class="panel-sub">Appointments booked per week — are we improving over time?</div></div></div>
       <div class="grid tl-hi" id="tlHi"></div>
       <div class="tl-bars" id="tlBars"></div>
@@ -406,7 +415,8 @@ window.CLIENT_DATA = {
     { wk: "June 1, 2026 - June 7, 2026",     dials: 3042, pickups: 219, convos: 21, booked: 5 },
     { wk: "June 8, 2026 - June 14, 2026",    dials: 1163, pickups: 95,  convos: 15, booked: 8 },
     { wk: "June 15, 2026 - June 21, 2026",   dials: 636,  pickups: 37,  convos: 5,  booked: 5 },
-    { wk: "June 22, 2026 - June 28, 2026",   dials: 661,  pickups: 50,  convos: 5,  booked: 1 }
+    { wk: "June 22, 2026 - June 28, 2026",   dials: 661,  pickups: 50,  convos: 5,  booked: 1 },
+    { wk: "June 29, 2026 - July 5, 2026",    dials: 1828, pickups: 215, convos: 29, booked: 14 }
   ]
 };
 </script>
@@ -559,33 +569,33 @@ window.CLIENT_DATA = {
 
   /* ===== conversion funnel ===== */
   function renderFunnel(){
-    var d=DATA[selected], closed=(selected in CLOSED)?CLOSED[selected]:null;
-    var stages=[
-      {name:'New Leads', sub:'top of funnel', val:d.leads, dpt:0},
-      {name:'Outbound Calls', sub:'dials placed', val:d.dials, dpt:1},
-      {name:'Pickups', sub:'calls answered', val:d.pickups, dpt:2},
-      {name:'Conversations', sub:'live discussions', val:d.convos, dpt:3},
-      {name:'Appointments', sub:'booked', val:d.booked, dpt:4},
-      {name:'Closed Deals', sub:closed==null?'not tracked yet':'won', val:closed, dpt:5, muted:closed==null}
+    var d=DATA[selected];
+    var base=[
+      {name:'New Leads', sub:'top of funnel', val:d.leads},
+      {name:'Outbound Calls', sub:'dials placed', val:d.dials},
+      {name:'Pickups', sub:'calls answered', val:d.pickups},
+      {name:'Conversations', sub:'live discussions', val:d.convos},
+      {name:'Appointments', sub:'booked this week', val:d.booked}
     ];
-    if((CFG.hide||[]).indexOf('newLeads')>-1) stages.shift(); // no lead tracking → start at Dials
+    if((CFG.hide||[]).indexOf('newLeads')>-1) base.shift(); // no lead tracking → funnel ends at Dials
+    var stages = base.reverse(); // Appointments on top, widest pool at the bottom
     var n=stages.length;
-    stages.forEach(function(s,i){ s.w = n>1 ? (100 - i*(50/(n-1))) : 100; });
+    stages.forEach(function(s,i){ s.w = n>1 ? (52 + i*(48/(n-1))) : 100; s.dpt = n-1-i; });
     var html='';
     stages.forEach(function(s,i){
       if(i>0){
-        var prev=stages[i-1], conn;
-        if(prev.name==='New Leads'){ // leads -> calls = expansion (multiplier)
-          conn = prev.val ? (s.val/prev.val).toFixed(1)+'× dials/lead' : '—';
+        var upper=stages[i-1], lower=s, conn;
+        if(lower.name==='New Leads'){ // leads -> calls = expansion (multiplier)
+          conn = lower.val ? (upper.val/lower.val).toFixed(1)+'× dials/lead' : '—';
           html+='<div class="vconn"><span class="arrow">▼</span><div class="chips"><span class="mult">'+conn+'</span></div></div>';
-        } else if(s.val==null || prev.val==null){
+        } else if(upper.val==null || lower.val==null){
           html+='<div class="vconn"><span class="arrow">▼</span><div class="chips"><span class="drop">awaiting data</span></div></div>';
         } else {
-          var adv = prev.val ? s.val/prev.val*100 : 0, drop=100-adv;
-          html+='<div class="vconn"><span class="arrow">▼</span><div class="chips"><span class="adv">'+fpct(adv)+' advance</span><span class="drop">'+fpct(drop)+' drop-off</span></div></div>';
+          var adv = lower.val ? upper.val/lower.val*100 : 0, drop=100-adv;
+          html+='<div class="vconn"><span class="arrow">▼</span><div class="chips"><span class="adv">'+fpct(adv)+' advanced</span><span class="drop">'+fpct(drop)+' drop-off</span></div></div>';
         }
       }
-      html+='<div class="vcard'+(s.muted?' muted':'')+'" style="--w:'+s.w+'%;--d:'+s.dpt+'">'+
+      html+='<div class="vcard" style="--w:'+s.w+'%;--d:'+s.dpt+'">'+
             '<div><div class="vname">'+s.name+'</div><div class="vsub">'+s.sub+'</div></div>'+
             '<div class="vcount">'+(s.val==null?'—':fmt(s.val))+'</div></div>';
     });
@@ -595,7 +605,8 @@ window.CLIENT_DATA = {
   /* ===== heatmap (static aggregate) ===== */
   function heatColor(v){ var a=(0.10+v*0.85).toFixed(2); return 'rgba(20,160,143,'+a+')'; }
   function renderHeatmap(){
-    var body=document.getElementById('heatBody'), cols='46px repeat('+HEAT_HOURS.length+',1fr)';
+    var body=document.getElementById('heatBody'); if(!body) return;
+    var cols='46px repeat('+HEAT_HOURS.length+',1fr)';
     body.innerHTML = HEAT_DAYS.map(function(day,r){
       return '<div class="heat-row" style="grid-template-columns:'+cols+'"><span class="day">'+day+'</span>'+
         (HEATMAP[r]||[]).map(function(v,c){ return '<div class="heat-cell" title="'+day+' '+HEAT_HOURS[c]+' · '+Math.round(v*100)+' answer index" style="background:'+heatColor(v)+'"></div>'; }).join('')+
@@ -608,6 +619,7 @@ window.CLIENT_DATA = {
 
   /* ===== historical timeline ===== */
   function renderTimeline(){
+    if(!document.getElementById('tlHi')) return;
     var bestBook=argmax(function(d){return d.booked;}), bestConvo=argmax(function(d){return d.convos;}), bestAns=argmax(answerRate);
     document.getElementById('tlHi').innerHTML =
       '<div class="tl-card"><div class="l">🏆 Highest Booking Week</div><div class="v">'+bestBook.v+' appts</div><div class="w">'+LABELS[bestBook.i]+'</div></div>'+
@@ -625,8 +637,9 @@ window.CLIENT_DATA = {
   /* ===== AI narrative + recs ===== */
   function renderNarrative(){
     var d=DATA[selected], ar=answerRate(d), br=bookingRate(d);
-    var rating = (br>=25 && d.booked>=5) ? 'Strong' : (d.booked>=3 || br>=15) ? 'Steady' : (d.dials>=1000) ? 'Building' : 'Early';
-    var dot = rating==='Strong'?'#34d399':rating==='Steady'?'#0e6d9a':rating==='Building'?'#fbbf24':'#94a3b8';
+    var ramping = DATA.length <= 5;
+    var rating = ramping ? 'Ramping' : (br>=25 && d.booked>=5) ? 'Strong' : (d.booked>=3 || br>=15) ? 'Steady' : (d.dials>=1000) ? 'Building' : 'Early';
+    var dot = rating==='Ramping'?'#14a08f':rating==='Strong'?'#34d399':rating==='Steady'?'#0e6d9a':rating==='Building'?'#fbbf24':'#94a3b8';
     document.getElementById('ratingDot').style.background=dot;
     document.getElementById('ratingDot').style.boxShadow='0 0 10px '+dot;
     document.getElementById('ratingText').textContent='Overall Performance: '+rating;
@@ -639,7 +652,9 @@ window.CLIENT_DATA = {
       if(d.leads!=null && pr.leads!=null){ var ld=d.leads-pr.leads; p.push('Lead volume '+(ld>0?'rose':ld<0?'declined':'held')+' '+(ld!==0?fmt(Math.abs(ld))+' ':'')+'while '+tail); }
       else { p.push('Dials '+(dd>=0?'scaled up '+fmt(Math.abs(dd)):'pulled back '+fmt(Math.abs(dd)))+', and booking efficiency '+(bd>0?'improved '+bd+' pts':bd<0?'eased '+Math.abs(bd)+' pts':'stayed level')+'.'); }
     }
-    p.push('Pickup-to-conversation quality sits at <b>'+fpct(convoRate(d))+'</b>, and the aggregate calling pattern points to <b>Friday late-morning and late-afternoon</b> as the strongest windows.');
+    var heatHidden=(CFG.hide||[]).indexOf('heatmap')>-1;
+    p.push('Pickup-to-conversation quality sits at <b>'+fpct(convoRate(d))+'</b>'+(heatHidden?'.':', and the aggregate calling pattern points to <b>Friday late-morning and late-afternoon</b> as the strongest windows.'));
+    if(ramping) p.push('This is an early, ramping account — volume is still building week to week and momentum is <b>trending up</b>. Early results are encouraging.');
     document.getElementById('aiNarr').innerHTML = p.map(function(x){return '<p>'+x+'</p>';}).join('');
 
     var nx=[];
@@ -654,12 +669,14 @@ window.CLIENT_DATA = {
   /* ===== exec recommendations checklist ===== */
   function renderChecklist(){
     var d=DATA[selected], ar=answerRate(d), br=bookingRate(d);
+    var tracksLeads = DATA.some(function(w){return w.leads!=null;});
     var items=[];
-    items.push({t:'<b>Increase Facebook & PPC lead generation</b> — top sources by volume, scale the spend that converts.'});
+    if(tracksLeads) items.push({t:'<b>Increase Facebook & PPC lead generation</b> — top sources by volume, scale the spend that converts.'});
+    else items.push({t:'<b>Keep scaling call volume</b> — steady daily dials are the fastest lever while the account ramps.'});
     items.push({t: ar<10 ? '<b>Improve pickup rate</b> — optimize call windows, list quality and local-presence numbers.' : '<b>Maintain answer-rate discipline</b> — current windows are working.'});
-    items.push({t: br>=20 ? '<b>Maintain current booking strategy</b> — '+fpct(br)+' conversion is healthy.' : '<b>Strengthen appointment setting</b> — only '+fpct(br)+' of convos book.'});
-    items.push({t:'<b>Focus on seller follow-up</b> — work unanswered leads with a structured 3-touch cadence.'});
-    items.push({t:'<b>Improve first contact speed</b> — call new leads within minutes of arrival.'});
+    items.push({t: br>=20 ? '<b>Maintain current booking strategy</b> — '+fpct(br)+' conversion is healthy.' : '<b>Strengthen appointment setting</b> — convert more conversations into booked appts.'});
+    items.push({t:'<b>Focus on seller follow-up</b> — work unanswered prospects with a structured 3-touch cadence.'});
+    items.push({t:'<b>Improve first contact speed</b> — reach new prospects within minutes.'});
     document.getElementById('checklist').innerHTML = items.map(function(x){
       return '<div class="check"><span class="box">✓</span><span class="ct">'+x.t+'</span></div>';
     }).join('');
@@ -732,6 +749,7 @@ window.CLIENT_DATA = {
     if(HIDE.indexOf('leadSource')>-1){ var r=document.getElementById('rowSF'); if(r) r.style.gridTemplateColumns='1fr'; }
     if(HIDE.indexOf('newLeads')>-1){ var lc=document.querySelector('.kpi[data-k="leads"]'); if(lc) lc.remove(); }
   })();
+  if(CFG.note){ var rn=document.getElementById('rampNote'); if(rn){ rn.innerHTML='<span class="emo">🚀</span><span>'+CFG.note+'</span>'; rn.style.display='flex'; } }
   renderHeatmap();
   renderChart(true);
   render();
